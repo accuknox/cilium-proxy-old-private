@@ -140,6 +140,7 @@ Config::Config(const ::cilium::BpfMetadata& config,
 }
 
 bool Config::getMetadata(Network::ConnectionSocket& socket) {
+
   Network::Address::InstanceConstSharedPtr src_address = socket.addressProvider().remoteAddress();
   const auto sip = src_address->ip();
   const auto& dst_address = socket.addressProvider().localAddress();

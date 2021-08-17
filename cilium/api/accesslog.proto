@@ -42,6 +42,12 @@ message HttpLogEntry {
   // which may have been removed, or merely logged and the request still
   // allowed, or the request may have been dropped due to them.
   repeated KeyValue rejected_headers = 9;
+
+  // Optional rule id
+  uint32 rule_id = 10;
+
+// Optional
+  bool audit_mode = 11;
 }
 
 message KafkaLogEntry {

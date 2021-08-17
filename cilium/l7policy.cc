@@ -107,6 +107,7 @@ Http::FilterHeadersStatus AccessFilter::decodeHeaders(
   headers.remove(Http::Headers::get().EnvoyOriginalDstHost);
   const auto& conn = callbacks_->connection();
   bool allowed = false;
+  uint32_t rule_id = 0;
 
   if (conn) {
     const auto option = Cilium::GetSocketOption(conn->socketOptions());
@@ -132,8 +133,11 @@ Http::FilterHeadersStatus AccessFilter::decodeHeaders(
       }
 
       // Fill in the log entry
+      bool isAuditedRule = option->policy_->IsAuditPolicyRule(&rule_id, ingress, option->port_,
+              ingress ? option->identity_ : option->destination_identity_);
+
       log_entry_.InitFromRequest(policy_name, *option,
-                                 callbacks_->streamInfo(), headers);
+                                 callbacks_->streamInfo(), headers, isAuditedRule, rule_id);
 
       allowed = option->policy_ &&
                 option->policy_->Allowed(

@@ -47,6 +47,8 @@ class PolicyInstance {
                        Envoy::Http::RequestHeaderMap& headers,
                        Cilium::AccessLog::Entry& log_entry) const PURE;
 
+  virtual bool IsAuditPolicyRule(uint32_t *rule_id, bool ingress, uint32_t port, uint64_t remote_id) const PURE;
+
   virtual const PortPolicyConstSharedPtr findPortPolicy(
       bool ingress, uint32_t port, uint64_t remote_id) const PURE;
 

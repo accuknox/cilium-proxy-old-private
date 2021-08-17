@@ -51,6 +51,8 @@ class PolicyInstanceImpl : public PolicyInstance {
    public:
     HttpNetworkPolicyRule(const cilium::HttpNetworkPolicyRule& rule) {
       ENVOY_LOG(trace, "Cilium L7 HttpNetworkPolicyRule():");
+      audit_mode_ = rule.audit_mode();
+      rule_id_ = rule.rule_id();
       for (const auto& header : rule.headers()) {
         headers_.emplace_back(
             std::make_unique<Http::HeaderUtility::HeaderData>(header));
@@ -179,6 +181,8 @@ class PolicyInstanceImpl : public PolicyInstance {
     std::vector<Http::HeaderUtility::HeaderDataPtr>
         headers_;  // Allowed if empty.
     std::vector<HeaderMatch> header_matches_;
+    bool audit_mode_;
+    uint16_t rule_id_;
   };
 
   class L7NetworkPolicyRule : public Logger::Loggable<Logger::Id::config> {
@@ -344,6 +348,21 @@ class PolicyInstanceImpl : public PolicyInstance {
       return true;
     }
 
+    bool IsAuditRule(uint32_t *rule_id, uint64_t remote_id) const {
+      if (!Matches(remote_id)) {
+        return false;
+      }
+      if (http_rules_.size() > 0) {
+        for (const auto& rule : http_rules_) {
+          *rule_id = rule.rule_id_;
+          if (rule.audit_mode_) {
+              return true;
+          }
+        }
+      }
+      return false;
+    }
+
     bool Matches(uint64_t remote_id, Envoy::Http::RequestHeaderMap& headers,
                  Cilium::AccessLog::Entry& log_entry) const {
       if (!Matches(remote_id)) {
@@ -352,6 +371,9 @@ class PolicyInstanceImpl : public PolicyInstance {
       if (http_rules_.size() > 0) {
         bool matched = false;
         for (const auto& rule : http_rules_) {
+          if (rule.audit_mode_) {
+              return true;
+          }
           if (rule.Matches(headers)) {
             // Return on the first match if no rules have header actions
             if (!have_header_matches_) {
@@ -489,6 +511,20 @@ class PolicyInstanceImpl : public PolicyInstance {
       return matched;
     }
 
+    bool IsAuditMatches (uint32_t *rule_id, uint64_t remote_id) const {
+        if (rules_.size() == 0) {
+            return true;
+        }
+
+        for (const auto& rule : rules_) {
+            if (rule->IsAuditRule(rule_id, remote_id)) {
+                return true;
+            }
+        }
+        return false;
+
+    }
+
     const PortPolicyConstSharedPtr findPortPolicy(uint64_t remote_id) const {
       for (const auto& rule : rules_) {
         if (rule->Matches(remote_id)) {
@@ -530,11 +566,24 @@ class PolicyInstanceImpl : public PolicyInstance {
       }
     }
 
+    bool IsAudited(uint32_t *rule_id, uint32_t port, uint64_t remote_id) const {
+
+        auto it = rules_.find(port);
+
+        if (it != rules_.end()) {
+            if (it->second.IsAuditMatches(rule_id, remote_id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool Matches(uint32_t port, uint64_t remote_id,
                  Envoy::Http::RequestHeaderMap& headers,
                  Cilium::AccessLog::Entry& log_entry) const {
       bool found_port_rule = false;
       auto it = rules_.find(port);
+
       if (it != rules_.end()) {
         if (it->second.Matches(remote_id, headers, log_entry)) {
           return true;
@@ -577,6 +626,11 @@ class PolicyInstanceImpl : public PolicyInstance {
                Cilium::AccessLog::Entry& log_entry) const override {
     return ingress ? ingress_.Matches(port, remote_id, headers, log_entry)
                    : egress_.Matches(port, remote_id, headers, log_entry);
+  }
+
+  bool IsAuditPolicyRule(uint32_t *rule_id, bool ingress, uint32_t port, uint64_t remote_id) const {
+      return ingress ? ingress_.IsAudited(rule_id, port, remote_id)
+          : egress_.IsAudited(rule_id, port, remote_id);
   }
 
   const PortPolicyConstSharedPtr findPortPolicy(

@@ -205,6 +205,12 @@ message HttpNetworkPolicyRule {
   //
   // Optional.
   repeated HeaderMatch header_matches = 2;
+
+  // Optional rule id
+  uint32 rule_id = 3;
+
+  // Optional
+  bool audit_mode = 4;
 }
 
 // A set of network policy rules that match Kafka requests.

@@ -127,6 +127,7 @@ class PolicyHostMap : public Singleton::Instance,
     uint64_t resolve(uint32_t addr4) const {
       for (const auto& pair : ipv4_to_policy_) {
         auto it = pair.second.find(masked(addr4, pair.first));
+
         if (it != pair.second.end()) {
           return it->second;
         }
