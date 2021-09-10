@@ -15,6 +15,8 @@
 #include "envoy/registry/registry.h"
 #include "envoy/singleton/manager.h"
 
+#include "common/network/address_impl.h"
+
 namespace Envoy {
 namespace Server {
 namespace Configuration {
@@ -67,6 +69,8 @@ SINGLETON_MANAGER_REGISTRATION(cilium_bpf_conntrack);
 SINGLETON_MANAGER_REGISTRATION(cilium_host_map);
 SINGLETON_MANAGER_REGISTRATION(cilium_ipcache);
 SINGLETON_MANAGER_REGISTRATION(cilium_network_policy);
+SINGLETON_MANAGER_REGISTRATION(cilium_svid_map);
+SINGLETON_MANAGER_REGISTRATION(cilium_bundles_map);
 
 namespace {
 
@@ -89,6 +93,26 @@ std::shared_ptr<const Cilium::NetworkPolicyMap> createPolicyMap(
       SINGLETON_MANAGER_REGISTERED_NAME(cilium_network_policy),
       [&context, &ct] {
         auto map = std::make_shared<Cilium::NetworkPolicyMap>(context, ct);
+        map->startSubscription();
+        return map;
+      });
+}
+
+std::shared_ptr<const Cilium::SVIDMap> createSVIDMap(
+    Server::Configuration::ListenerFactoryContext& context) {
+  return context.singletonManager().getTyped<const Cilium::SVIDMap>(
+      SINGLETON_MANAGER_REGISTERED_NAME(cilium_svid_map), [&context] {
+        auto map = std::make_shared<Cilium::SVIDMap>(context);
+        map->startSubscription();
+        return map;
+      });
+}
+
+std::shared_ptr<const Cilium::BundlesMap> createBundlesMap(
+    Server::Configuration::ListenerFactoryContext& context) {
+  return context.singletonManager().getTyped<const Cilium::BundlesMap>(
+      SINGLETON_MANAGER_REGISTERED_NAME(cilium_bundles_map), [&context] {
+        auto map = std::make_shared<Cilium::BundlesMap>(context);
         map->startSubscription();
         return map;
       });
@@ -132,6 +156,11 @@ Config::Config(const ::cilium::BpfMetadata& config,
     hosts_ = createHostMap(context);
   }
 
+  svids_ = createSVIDMap(context);
+
+  // TODO(Mauricio): context is probably not needed here!
+  bundles_ = createBundlesMap(context);
+
   // Get the shared policy provider, or create it if not already created.
   // Note that the API config source is assumed to be the same for all filter
   // instances!
@@ -140,6 +169,7 @@ Config::Config(const ::cilium::BpfMetadata& config,
 }
 
 bool Config::getMetadata(Network::ConnectionSocket& socket) {
+
   Network::Address::InstanceConstSharedPtr src_address = socket.addressProvider().remoteAddress();
   const auto sip = src_address->ip();
   const auto& dst_address = socket.addressProvider().localAddress();
@@ -204,7 +234,12 @@ bool Config::getMetadata(Network::ConnectionSocket& socket) {
 
   // Resolve the destination security ID for egress
   uint32_t destination_identity = 0;
-  if (!is_ingress_) {
+  // TODO(Mauricio): The destintaion_identity_ is needed for ingress
+  // termiatingTLS spiffe support because cilium needs to know the identity of
+  // the destination pod to use the right certificates.
+  // Should this logic be extended to avoid some overhead when this information
+  // is not needed?
+  //if (!is_ingress_) {
     if (ipcache_ != nullptr) {
       destination_identity = ipcache_->resolve(dip);
     } else if (hosts_ != nullptr) {
@@ -218,7 +253,7 @@ bool Config::getMetadata(Network::ConnectionSocket& socket) {
                 "cilium.bpf_metadata (egress): Destination identity defaults "
                 "to WORLD");
     }
-  }
+  //}
 
   // Only use the original source address if permitted and the other node is not
   // in the same node and is not classified as WORLD.
@@ -253,7 +288,31 @@ bool Config::getMetadata(Network::ConnectionSocket& socket) {
   bool no_mark = npmap_->is_sidecar_;
   socket.addOption(std::make_shared<Cilium::SocketOption>(
       policy, no_mark, source_identity, destination_identity, is_ingress_, dip->port(),
-      std::move(pod_ip), src_address));
+      std::move(pod_ip), src_address, svids_, bundles_));
+
+  auto port_policy = policy->findPortPolicy(is_ingress_, dip->port(),
+          is_ingress_ ? source_identity : destination_identity);
+  if (port_policy != nullptr && port_policy->getDstPort() != 0) {
+    // Translate destination port
+    auto localAddr = socket.addressProvider().localAddress();
+    if (localAddr->ip()) {
+      if (auto ipv4 = localAddr->ip()->ipv4()) {
+        struct sockaddr_in sock_addr = {
+          .sin_family = AF_INET,
+          .sin_port = htons(port_policy->getDstPort()),
+          .sin_addr = {
+            .s_addr = ipv4->address(),
+          },
+          .sin_zero = {0},
+        };
+
+        auto addr = std::make_shared<Envoy::Network::Address::Ipv4Instance>(&sock_addr);
+        socket.addressProvider().setLocalAddress(addr);
+      }
+      // TODO(Mauricio): support ipv6?
+    }
+  }
+
   return true;
 }
 

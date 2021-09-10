@@ -135,7 +135,9 @@ bool AccessLog::Entry::UpdateFromMetadata(const std::string& l7proto,
 void AccessLog::Entry::InitFromRequest(const std::string& policy_name,
                                        const Cilium::SocketOption& option,
                                        const StreamInfo::StreamInfo& info,
-                                       const Http::RequestHeaderMap& headers) {
+                                       const Http::RequestHeaderMap& headers,
+                                       const bool is_audited,
+                                       const uint32_t rule_id) {
   InitFromConnection(policy_name, option, info);
 
   auto time = info.startTime();
@@ -158,6 +160,8 @@ void AccessLog::Entry::InitFromRequest(const std::string& policy_name,
   }
   ::cilium::HttpLogEntry* http_entry = entry_.mutable_http();
   http_entry->set_http_protocol(proto);
+  http_entry->set_audit_mode(is_audited);
+  http_entry->set_rule_id(rule_id);
 
   // request headers
   headers.iterate(

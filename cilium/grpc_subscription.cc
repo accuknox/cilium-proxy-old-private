@@ -34,6 +34,8 @@ TypeUrlToServiceMap* buildTypeUrlToServiceMap() {
   for (const std::string& service_name : {
            "cilium.NetworkPolicyDiscoveryService",
            "cilium.NetworkPolicyHostsDiscoveryService",
+           "cilium.SVIDDiscoveryService",
+           "cilium.BundlesDiscoveryService",
        }) {
     const auto* service_desc =
         Protobuf::DescriptorPool::generated_pool()->FindServiceByName(

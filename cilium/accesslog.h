@@ -26,7 +26,9 @@ class AccessLog : Logger::Loggable<Logger::Id::router> {
     void InitFromRequest(const std::string& policy_name,
                          const Cilium::SocketOption& option,
                          const StreamInfo::StreamInfo&,
-                         const Http::RequestHeaderMap&);
+                         const Http::RequestHeaderMap&,
+                         const bool is_audited,
+                         const uint32_t rule_id);
     void UpdateFromResponse(const Http::ResponseHeaderMap&, TimeSource&);
 
     void InitFromConnection(const std::string& policy_name,

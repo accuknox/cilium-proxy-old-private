@@ -107,6 +107,7 @@ Http::FilterHeadersStatus AccessFilter::decodeHeaders(
   headers.remove(Http::Headers::get().EnvoyOriginalDstHost);
   const auto& conn = callbacks_->connection();
   bool allowed = false;
+  uint32_t rule_id = 0;
 
   if (conn) {
     const auto option = Cilium::GetSocketOption(conn->socketOptions());
@@ -125,15 +126,22 @@ Http::FilterHeadersStatus AccessFilter::decodeHeaders(
                                                            std::make_unique<Network::UpstreamServerName>(parsed_authority.host_),
                                                            StreamInfo::FilterState::StateType::Mutable);
           }
-          callbacks_->streamInfo().filterState()->setData(Network::UpstreamSubjectAltNames::key(),
-                                                         std::make_unique<Network::UpstreamSubjectAltNames>(std::vector<std::string>{std::string(parsed_authority.host_)}),
-                                                         StreamInfo::FilterState::StateType::Mutable);
+          // TODO(Mauricio): Removed subaltname validation in all the cases.
+          // It can be renabled by checking if the policy is a spiffe one
+          // (by calling isSpiffe())
+
+          //callbacks_->streamInfo().filterState()->setData(Network::UpstreamSubjectAltNames::key(),
+          //                                               std::make_unique<Network::UpstreamSubjectAltNames>(std::vector<std::string>{std::string(parsed_authority.host_)}),
+          //                                               StreamInfo::FilterState::StateType::Mutable);
         }
       }
 
       // Fill in the log entry
+      bool isAuditedRule = option->policy_->IsAuditPolicyRule(&rule_id, ingress, option->port_,
+              ingress ? option->identity_ : option->destination_identity_);
+
       log_entry_.InitFromRequest(policy_name, *option,
-                                 callbacks_->streamInfo(), headers);
+                                 callbacks_->streamInfo(), headers, isAuditedRule, rule_id);
 
       allowed = option->policy_ &&
                 option->policy_->Allowed(

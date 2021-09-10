@@ -36,6 +36,10 @@ class PortPolicy {
   virtual Ssl::ContextSharedPtr getServerTlsContext() const PURE;
   virtual Ssl::ContextConfig& getClientTlsContextConfig() const PURE;
   virtual Ssl::ContextSharedPtr getClientTlsContext() const PURE;
+
+  virtual bool isSpiffe() const PURE;
+  virtual std::vector<std::string> getSpiffePeerIDs() const PURE;
+  virtual uint16_t getDstPort() const PURE;
 };
 using PortPolicyConstSharedPtr = std::shared_ptr<const PortPolicy>;
 
@@ -46,6 +50,8 @@ class PolicyInstance {
   virtual bool Allowed(bool ingress, uint32_t port, uint64_t remote_id,
                        Envoy::Http::RequestHeaderMap& headers,
                        Cilium::AccessLog::Entry& log_entry) const PURE;
+
+  virtual bool IsAuditPolicyRule(uint32_t *rule_id, bool ingress, uint32_t port, uint64_t remote_id) const PURE;
 
   virtual const PortPolicyConstSharedPtr findPortPolicy(
       bool ingress, uint32_t port, uint64_t remote_id) const PURE;
